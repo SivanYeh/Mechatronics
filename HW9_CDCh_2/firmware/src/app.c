@@ -94,6 +94,7 @@ int startTime = 0;
 
 // VARIABLE
 static volatile int time = 24000000;
+int j=0;
 
 // *****************************************************************************
 /* Application Data
@@ -345,6 +346,17 @@ bool APP_StateReset(void) {
  */
 
 void APP_Initialize(void) {
+    /* Initialize Machine*/
+    TRISAbits.TRISA4=0;     // green LED. Define pin RPA4 to output.
+    TRISBbits.TRISB4=1;     // push-bottom. Define pin RPB4 to input.
+    LATAbits.LATA4=0;
+    
+    initExpander();
+    LCD_init();
+    SPI1_init();
+    acce_init();
+    LCD_clearScreen(WHITE);
+    
     /* Place the App state machine in its initial state. */
     appData.state = APP_STATE_INIT;
 
@@ -438,7 +450,13 @@ void APP_Tasks(void) {
                 USB_DEVICE_CDC_Read(USB_DEVICE_CDC_INDEX_0,
                         &appData.readTransferHandle, appData.readBuffer,
                         APP_READ_BUFFER_SIZE);
-
+                // Read r -v1.
+                
+                
+                if(appData.readBuffer[0]=='r'){
+                    j=1;
+                }
+                 
                 if (appData.readTransferHandle == USB_DEVICE_CDC_TRANSFER_HANDLE_INVALID) {
                     appData.state = APP_STATE_ERROR;
                     break;
@@ -457,7 +475,7 @@ void APP_Tasks(void) {
             /* Check if a character was received or a switch was pressed.
              * The isReadComplete flag gets updated in the CDC event handler. */
 
-            if (appData.isReadComplete || _CP0_GET_COUNT() - startTime > (48000000 / 2 / 5)) {
+            if (appData.isReadComplete || _CP0_GET_COUNT() - startTime > (48000000 / 2 / 100)) {
                 appData.state = APP_STATE_SCHEDULE_WRITE;
             }
 
@@ -475,9 +493,124 @@ void APP_Tasks(void) {
             appData.writeTransferHandle = USB_DEVICE_CDC_TRANSFER_HANDLE_INVALID;
             appData.isWriteComplete = false;
             appData.state = APP_STATE_WAIT_FOR_WRITE_COMPLETE;
+            
+            /* Function to check the basic connection */
+            //len = sprintf(dataOut, "%d\r\n", i);
+            //i++;
+            
+            /* Collecting data from accelerometer */
+            
+            _CP0_SET_COUNT(0);
+            if(j==1){
+            //i = 0;
+            LATAbits.LATA4 = 1;
 
-            len = sprintf(dataOut, "%d\r\n", i);
+            signed short temp;
+            signed short gyroX;
+            signed short gyroY;
+            signed short gyroZ;
+            signed short accelX;
+            signed short accelY;
+            signed short accelZ;
+            unsigned char data[14];
+
+            // 1. READ WHO_AM_I
+            unsigned char c;
+            c= readi2c(WHO_AM_I);
+            sprintf(message,"I'm %d :D", c);
+            drawString(75,150, message, BLACK, WHITE);
+        
+            
+            I2C_read_multiple(ADDR, OUT_TEMP_L, data,14);
+            temp=data[0]|(data[1]<<8);
+
+            gyroX=data[2]|(data[3]<<8);
+            gyroY=data[4]|(data[5]<<8);
+            gyroZ=data[6]|(data[7]<<8);
+
+            accelX=data[8]|(data[9]<<8);
+            accelY=data[10]|(data[11]<<8);
+            accelZ=data[12]|(data[13]<<8);
+            
+            /* Read 'r' -v2.
+            if(appData.readBuffer[0]=='r'){
+                len= sprintf(dataOut, "%d %d %d %d %d %d %d\r\n", i, accelX, accelY, accelZ, gyroX, gyroY, gyroZ );
+                i++;
+                }else{
+                    appData.state = APP_STATE_ERROR;
+                    break;
+                }
+            */
+            len= sprintf(dataOut, "%d %d %d %d %d %d %d\r\n", i+1, accelX, accelY, accelZ, gyroX, gyroY, gyroZ );
             i++;
+            if(i==100){i=0;j=0;}
+            int height= 160;
+            int width= 128;
+            unsigned short c1=GREEN;
+            unsigned short c2=BLACK;
+            int row = 0;
+            int col = 0;
+            int index = 0, index2=0;
+            float d=0, d2=0;
+            signed short x= accelX;
+
+            d = (accelX-(-17000))/34000.0*128;
+            index=d;
+
+            d2= (accelY-(-17000))/34000.0*160;
+            index2=d2;
+
+            unsigned short h=4;
+
+            // X axis Progress Bar
+
+                for (row = 0; row < 128; row++) {
+                    if (row<index){
+                    for (col = 0; col < h; col++) {
+                        LCD_drawPixel( row, 80+col, c2);
+                    }}else if(row==index){
+                        for (col = 0; col < h; col++) {
+                        LCD_drawPixel( row, 80+col, c1);
+                    }
+                    }else{
+                        for (col = 0; col < h; col++) {
+                        LCD_drawPixel( row, 80+col, c2);
+                    }
+                    }
+                }
+
+            // Y axis Progress Bar
+
+                for (col = 0; col < 160; col++) {
+                    if (col<index2){
+                    for (row = 0; row < h; row++) {
+                        LCD_drawPixel( 64+row, col, c2);
+                    }}else if(col==index2){
+                        for (row = 0; row < h; row++) {
+                        LCD_drawPixel( 64+row, col, c1);
+                    }
+                    }else{
+                        for (row = 0; row < h; row++) {
+                        LCD_drawPixel( 64+row, col, c2);
+                        }
+                    }
+                }
+
+                /*
+                while (_CP0_GET_COUNT() < time/100) {
+                    LATAbits.LATA4 = 1;
+                }
+                _CP0_SET_COUNT(0);
+                while (_CP0_GET_COUNT() < time/100) {
+                    LATAbits.LATA4 = 0;
+
+                }*/
+                
+            
+            }else{
+                dataOut[0]=0; len=1;
+            }
+            
             if (appData.isReadComplete) {
                 USB_DEVICE_CDC_Write(USB_DEVICE_CDC_INDEX_0,
                         &appData.writeTransferHandle,
