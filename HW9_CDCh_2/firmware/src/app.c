@@ -54,10 +54,11 @@ SUBSTITUTE GOODS, TECHNOLOGY, SERVICES, OR ANY CLAIMS BY THIRD PARTIES
 // *****************************************************************************
 
 #include "app.h"
-#include <stdio.h>
-#include <xc.h>
 #include "i2c_master_noint.h"
 #include "ST7735.h"
+#include <stdio.h>
+#include <xc.h>
+
 
 // *****************************************************************************
 // *****************************************************************************
@@ -95,7 +96,11 @@ int startTime = 0;
 // VARIABLE
 static volatile int time = 24000000;
 int j=0;
-
+int MAF=0;
+int IIR=0;
+int FIR=0;
+int z_value[100];
+float b[6]={0.026408,0.140531,0.333061,0.333061,0.140531,0.026408};
 // *****************************************************************************
 /* Application Data
 
@@ -531,18 +536,42 @@ void APP_Tasks(void) {
             accelX=data[8]|(data[9]<<8);
             accelY=data[10]|(data[11]<<8);
             accelZ=data[12]|(data[13]<<8);
+            //MAF
+            z_value[i]=accelZ;
+            int k=0;
+            float p=0;
+            for(k=0;k<i;k++){
+                MAF=MAF+z_value[k];
+            }
+            p=MAF/(i+1);
+            MAF=p;
+            //IIR
+            if(i==0){
+                p=z_value[i];
+                IIR=p;
+            }else{
+                p=0.8*z_value[i-1]+0.2*z_value[i];
+                IIR=p;
+            }
             
-            /* Read 'r' -v2.
-            if(appData.readBuffer[0]=='r'){
-                len= sprintf(dataOut, "%d %d %d %d %d %d %d\r\n", i, accelX, accelY, accelZ, gyroX, gyroY, gyroZ );
-                i++;
-                }else{
-                    appData.state = APP_STATE_ERROR;
-                    break;
+            //FIR
+            if(i<6){
+                FIR = z_value[i];
+            }else{
+                for(k=0;k<6;k++){
+                    p=FIR+z_value[i-k]*b[k];
+                    FIR=p;
                 }
-            */
-            len= sprintf(dataOut, "%d %d %d %d %d %d %d\r\n", i+1, accelX, accelY, accelZ, gyroX, gyroY, gyroZ );
+            }
+            
+            len= sprintf(dataOut, "%d %d %d %d %d\r\n", i+1, accelZ, MAF, IIR, FIR);
+            //fileID = fopen('value.txt','w');
+            //fprintf(fileID,"%d %d %d %d %d\r\n",i+1, accelZ, MAF, IIR, FIR);
+            //fclose(fileID);
+            MAF=0;
+            FIR=0;
             i++;
+            
             if(i==100){i=0;j=0;}
             int height= 160;
             int width= 128;
@@ -595,16 +624,6 @@ void APP_Tasks(void) {
                         }
                     }
                 }
-
-                /*
-                while (_CP0_GET_COUNT() < time/100) {
-                    LATAbits.LATA4 = 1;
-                }
-                _CP0_SET_COUNT(0);
-                while (_CP0_GET_COUNT() < time/100) {
-                    LATAbits.LATA4 = 0;
-
-                }*/
                 
             
             }else{
@@ -733,6 +752,7 @@ void drawString(unsigned short x, unsigned short y, char message[100], unsigned 
         i++;
     }
 }
+
 
 
 /*******************************************************************************
